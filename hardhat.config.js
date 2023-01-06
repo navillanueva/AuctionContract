@@ -26,5 +26,14 @@ module.exports = {
       default: 0,
       5: 0,
     },
+    bidder1: {
+      default: 1,
+    },
+    bidder2: {
+      default: 2,
+    },
+    bidder3: {
+      default: 3,
+    },
   },
 };

@@ -2,6 +2,12 @@
 
 const { run } = require("hardhat");
 
+/**
+ * @notice script to verify a contract when it has been deployed to the blockchain
+ * @dev this function allows are contract to get verified (green check) when we deploy it to the blockchain,
+ *      this helps provide transparency with the information flow of our contract
+ */
+
 async function verify(contractAddress, args) {
   console.log("Verifying contract...");
 

@@ -1,20 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.9;
 
-// Imports
+// 1.- Imports
 
 import "hardhat/console.sol";
 
-// Error code
+// 2.- Error code
+
+// declaring custom errors is a better practice for gas saving and using dynamic information
 
 error AuctionV1__NotOwner();
 error AuctionV1__Owner();
+error AuctionV1__EmptyList();
+error AuctionV1__WrongTimeValues();
+error AuctionV1__WrongArraySize();
+error AuctionV1__DuplicateItems();
+error AuctionV1__AuctionEnded();
+error AuctionV1__AuctionLive();
+error AuctionV1__BidTooLow();
 
-// Interfaces
+// 3 .-Interfaces
 
-// Libraries
+// 4.- Libraries
 
-// Contract
+// 5.- Contract
 
 /** @title Simple Auction System for Trufin.io
  *  @author Nicolas Arnedo Villanueva
@@ -30,20 +39,30 @@ contract AuctionV1 {
 
     // declare uints successively to save gas
     // start time and end time should be visible to all users
-
-    mapping(string => Item) private s_items;
     uint public startTime;
     uint public endTime;
-    uint private constant INITIAL_BID = 1e18 wei;
-    string[] internal auctionItems;
+    uint private constant INITIAL_BID = 1 ether;
+
+    // we make the string and uint arrays private as we dont want any other smart contracts to inherit this information
+    uint[] private s_initialBids;
+    string[] private s_auctionItems;
+
+    // we create a mapping to check for duplicated items when creating an auction
+    // the default value for all of the booleans is false
+    mapping(string => bool) private s_noDuplicate;
+    mapping(string => Item) private s_items;
+
     address public immutable i_owner;
 
     struct Item {
         uint highestBid;
-        address highestBidder;
+        // highestBidder address must be payable so we can return bids that have been surpassed
+        address payable highestBidder;
     }
 
     // EVENTS
+
+    event NewBid(address bidder, uint bid);
 
     // MODIFIERS
 
@@ -59,11 +78,21 @@ contract AuctionV1 {
 
     /**
      * @notice modifier to add to functions that cant be executed by the owner of the contract
-     * @dev this modifier isn´t completely necesarry but could be useful in the future and makes code look cleaner
+     * @dev this modifier isn´t completely necessary but could be useful in the future and makes code look cleaner
      */
 
     modifier notOwner() {
         if (msg.sender == i_owner) revert AuctionV1__Owner();
+        _;
+    }
+
+    /**
+     * @notice modifier to check if the auction is live
+     * @dev every time the function place bid is called it should check the auction is still live
+     */
+
+    modifier auctionLive() {
+        if (block.timestamp > endTime) revert AuctionV1__AuctionEnded();
         _;
     }
 
@@ -80,33 +109,44 @@ contract AuctionV1 {
 
     /**
      * @notice function to create one auction
-     * @dev since the solidity problem states that the auction must be initialized with starting bids for each item
-     *      I generically gave (in the for loop) a starting price of 1eth for every item in the list passed
+     * @dev since the solidity problem states that the auction must be initialized with starting bids (in plural) for each item
+     *      I assume there are multiple starting bids, therefore each item has a different starting value that the contract creator sets
      * @param _auctionItems the list must not be empty, we check this with the first require
      * @param _startTime value must be smaller than the end time of the auction, checked with the second require
      */
     function initAuction(
         string[] memory _auctionItems,
+        uint[] memory _initialBids,
         uint _startTime,
         uint _endTime
     ) public onlyOwner {
-        require(
-            auctionItems.length > 0,
-            "There has to be at least one item on the auction list"
-        );
-        require(
-            startTime < endTime,
-            "The start time value of the auction has to be smaller than the end time"
-        );
+        // checking for valid parameters values introduced
+        if (_auctionItems.length <= 0) revert AuctionV1__EmptyList();
+        if (_auctionItems.length != _initialBids.length)
+            revert AuctionV1__WrongArraySize();
+        if (_startTime > _endTime) revert AuctionV1__WrongTimeValues();
+
+        s_auctionItems = _auctionItems;
+        s_initialBids = _initialBids;
         startTime = _startTime;
         endTime = _endTime;
-        auctionItems = _auctionItems;
+
         for (
             uint itemsIndex = 0;
-            itemsIndex < auctionItems.length;
+            itemsIndex < s_auctionItems.length;
             itemsIndex++
         ) {
-            s_items[auctionItems[itemsIndex]].highestBid = INITIAL_BID;
+            // check that the mapping value hasnt been changed to true, which would mean there is a duplicate
+            if (!s_noDuplicate[s_auctionItems[itemsIndex]]) {
+                // change item value to true
+                s_noDuplicate[s_auctionItems[itemsIndex]] = true;
+                // set initial value for that specific item
+                s_items[s_auctionItems[itemsIndex]].highestBid = s_initialBids[
+                    itemsIndex
+                ];
+            } else {
+                revert AuctionV1__DuplicateItems();
+            }
         }
     }
 
@@ -117,34 +157,52 @@ contract AuctionV1 {
      * @param _item name to be able to go through our mapping an update highest bids and bidders
      */
 
-    function placeBid(string memory _item) public payable notOwner {
+    function placeBid(string memory _item) public payable notOwner auctionLive {
         // verify value is not smaller than the highest bid
-        require(
-            msg.value > s_items[_item].highestBid,
-            "Bid must be higher than the current highest bid!"
-        );
-        s_items[_item].highestBid = msg.value;
-        s_items[_item].highestBidder = msg.sender;
+        if (msg.value > s_items[_item].highestBid) {
+            // saving to local variable to avoid going to storage two times
+            address payable highestBidder = s_items[_item].highestBidder;
+            // if bid is higher, we return the value of the last highest bid to its owner
+            // unless the recent owner is the contract owner which didnt lock any value in the bid
+            if (highestBidder != i_owner) {
+                highestBidder.transfer(s_items[_item].highestBid);
+            }
+            // storing the value in a storage variable and then changin it
+            // instead of calling the value twice, this way we save the usar
+            // placing the bid gas when calling this function
+            Item storage item = s_items[_item];
+            item.highestBidder = payable(msg.sender);
+            item.highestBid = msg.value;
+            emit NewBid(item.highestBidder, item.highestBid);
+        } else {
+            revert AuctionV1__BidTooLow();
+        }
     }
 
     /**
      * @notice function to determine the highest bidder for each item when the auction ends
-     * @dev should the first require be adapted as a modifier with an error or an event?
-     * @return array of uints
+     * @dev this is a view function as it does not affect/alter the blockchain
+     * @return array I assume that it only returns the highest bidder for all of the items in auction that ended, and not also their highest bids
      */
-    function getHighestBids() public payable onlyOwner returns (uint[] memory) {
+    function getHighestBidders()
+        public
+        view
+        onlyOwner
+        returns (address[] memory)
+    {
         // first we must check that the auction has finished
-        require(block.timestamp > endTime, "The auction has not ended yet");
-        uint[] memory highestBids = new uint[](auctionItems.length);
+
+        if (block.timestamp < endTime) revert AuctionV1__AuctionLive();
+        address[] memory highestBidders = new address[](s_auctionItems.length);
         for (
             uint itemsIndex = 0;
-            itemsIndex < auctionItems.length;
+            itemsIndex < s_auctionItems.length;
             itemsIndex++
         ) {
-            highestBids[itemsIndex] = s_items[auctionItems[itemsIndex]]
-                .highestBid;
+            highestBidders[itemsIndex] = s_items[s_auctionItems[itemsIndex]]
+                .highestBidder;
         }
-        return highestBids;
+        return highestBidders;
     }
 
     // TESTING GETTERS
@@ -153,11 +211,21 @@ contract AuctionV1 {
         return address(this).balance;
     }
 
-    function getTime() public view returns (uint) {
-        return block.timestamp;
-    }
-
     function getOwner() public view returns (address) {
         return i_owner;
+    }
+
+    function getDuplicateValue(string memory item) public view returns (bool) {
+        return s_noDuplicate[item];
+    }
+
+    function getHighestBid(string memory item) public view returns (uint) {
+        return s_items[item].highestBid;
+    }
+
+    function getHighestBidder(
+        string memory item
+    ) public view returns (address) {
+        return s_items[item].highestBidder;
     }
 }
