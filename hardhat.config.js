@@ -12,19 +12,19 @@ module.exports = {
   defaultNetwork: "hardhat",
   solidity: "0.8.17",
   networks: {
-    goerli: {
-      url: GOERLI_RPC_URL,
-      accounts: [PRIVATE_KEY],
-      chainId: 5,
-      blockConfirmations: 6,
-    },
+    // goerli: {
+    // url: GOERLI_RPC_URL,
+    // accounts: [PRIVATE_KEY],
+    // chainId: 5,
+    // blockConfirmations: 6,
+    // },
   },
   // we create a set of accounts for our hre (hardhat runtime environment) so we can test locally
   // the chain id for goerli testnet is 5
   namedAccounts: {
     deployer: {
       default: 0,
-      5: 0,
+      // 5: 0,
     },
     bidder1: {
       default: 1,
