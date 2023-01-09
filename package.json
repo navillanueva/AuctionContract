@@ -6,6 +6,7 @@
   "author": "Nicolas Arnedo Villanueva",
   "license": "MIT",
   "devDependencies": {
+    "@chainlink/contracts": "^0.5.1",
     "@ethersproject/abi": "^5.4.7",
     "@ethersproject/providers": "^5.4.7",
     "@nomicfoundation/hardhat-chai-matchers": "^1.0.0",
@@ -24,5 +25,11 @@
     "solc": "^0.8.17",
     "solidity-coverage": "^0.8.0",
     "typechain": "^8.1.0"
+  },
+  "scripts":{
+    "test": "yarn hardhat test",
+    "test:staging": "yarn hardhat test --network goerli",
+    "format": "yarn prettier --write",
+    "coverage": "yarn hardhat coverage"
   }
 }
