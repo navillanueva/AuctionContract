@@ -41,7 +41,6 @@ contract AuctionV1 {
     // start time and end time should be visible to all users
     uint public startTime;
     uint public endTime;
-    uint private constant INITIAL_BID = 1 ether;
 
     // we make the string and uint arrays private as we dont want any other smart contracts to inherit this information
     uint[] private s_initialBids;
@@ -159,24 +158,22 @@ contract AuctionV1 {
 
     function placeBid(string memory _item) public payable notOwner auctionLive {
         // verify value is not smaller than the highest bid
-        if (msg.value > s_items[_item].highestBid) {
-            // saving to local variable to avoid going to storage two times
-            address payable highestBidder = s_items[_item].highestBidder;
-            // if bid is higher, we return the value of the last highest bid to its owner
-            // unless the recent owner is the contract owner which didnt lock any value in the bid
-            if (highestBidder != i_owner) {
-                highestBidder.transfer(s_items[_item].highestBid);
-            }
-            // storing the value in a storage variable and then changin it
-            // instead of calling the value twice, this way we save the usar
-            // placing the bid gas when calling this function
-            Item storage item = s_items[_item];
-            item.highestBidder = payable(msg.sender);
-            item.highestBid = msg.value;
-            emit NewBid(item.highestBidder, item.highestBid);
-        } else {
+        if (msg.value < s_items[_item].highestBid)
             revert AuctionV1__BidTooLow();
+        // saving to local variable to avoid going to storage two times
+        address payable highestBidder = s_items[_item].highestBidder;
+        // if bid is higher, we return the value of the last highest bid to its owner
+        // unless the recent owner is the contract owner which didnt lock any value in the bid
+        if (highestBidder != i_owner) {
+            highestBidder.transfer(s_items[_item].highestBid);
         }
+        // storing the value in a storage variable and then changin it
+        // instead of calling the value twice, this way we save the usar
+        // placing the bid gas when calling this function
+        Item storage item = s_items[_item];
+        item.highestBidder = payable(msg.sender);
+        item.highestBid = msg.value;
+        emit NewBid(item.highestBidder, item.highestBid);
     }
 
     /**

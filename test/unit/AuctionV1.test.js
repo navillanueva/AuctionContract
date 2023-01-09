@@ -40,7 +40,7 @@ describe("AuctionV1", async function () {
     initialBids = [1, 2];
     startTime = await time.latest();
     // setting endTime plus 5 to allow for several operations (like multple bids) before auction inds
-    endTime = startTime + 5;
+    endTime = startTime + 20;
   });
 
   describe("Constructor", async function () {
@@ -83,8 +83,7 @@ describe("AuctionV1", async function () {
 
     it("reverts if the start time is a larger value than the end time", async function () {
       // making the value of start time bigger than the end time value
-      // since endtime was equal to startime + 5 we can increase it by 6
-      startTime += 6;
+      startTime += endTime;
       await expect(
         auctionv1.initAuction(auctionItems, initialBids, startTime, endTime)
       ).to.be.revertedWithCustomError(auctionv1, "AuctionV1__WrongTimeValues");
@@ -250,7 +249,6 @@ describe("AuctionV1", async function () {
 
     // we already checked that the onlyOwner modifier works during the initialize auction test so no need to test it again
 
-    // revert auction live
     it("reverts if the auction is still live", async function () {
       await expect(auctionv1.getHighestBidders()).to.be.revertedWithCustomError(
         auctionv1,
@@ -258,7 +256,6 @@ describe("AuctionV1", async function () {
       );
     });
 
-    // returns the appropiate values
     it("returns all the highest bidders", async function () {
       // we set the block.timestamp higher than the endTime
       await time.increaseTo(endTime + 2);
