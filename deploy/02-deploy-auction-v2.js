@@ -10,7 +10,7 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
 
   log(deployer);
 
-  const auctionv1 = await deploy("AuctionV1", {
+  const auctionv2 = await deploy("AuctionV2", {
     from: deployer,
     log: true,
     waitConfirmations: network.config.blockConfrimations || 1,
@@ -21,10 +21,10 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
       network.name
     ) /** && process.env.ETHERSCAN_API_KEY */
   ) {
-    await verify(auctionv1.address);
+    await verify(auctionv2.address);
   }
 
   log("-----------------------------------");
 };
 
-module.exports.tags = ["all", "v1"];
+module.exports.tags = ["all", "v2"];
