@@ -19,9 +19,12 @@ error AuctionV2__DuplicateItems();
 error AuctionV2__AuctionLive();
 error AuctionV2__AuctionEnded();
 error AuctionV2__BidTooLow();
+/**
+ * @dev we add some params to this error so the user can understand which one of the 3 is value that isnt allowing the function performUpKeep to execute
+ */
 error AuctionV2__UpkeepNotNeeded(
     uint256 currentBalance,
-    uint256 numPlayers,
+    bool newBids,
     uint256 AuctionState
 );
 
@@ -38,7 +41,7 @@ error AuctionV2__UpkeepNotNeeded(
  *  @dev This implements chainlink automation
  */
 
-/**is KeeperCompatibleInterface*/ contract AuctionV2 {
+contract AuctionV2 is KeeperCompatibleInterface {
     // TYPE DECLARATIONS
 
     enum AuctionState {
@@ -50,11 +53,13 @@ error AuctionV2__UpkeepNotNeeded(
 
     // declare uints successively to save gas
     // start time and end time should be visible to all users
-    uint public startTime;
-    uint public endTime;
+    uint256 public startTime;
+    uint256 public endTime;
+    uint256 private s_interval;
+    bool private s_newBids;
 
     // we make the string and uint arrays private as we dont want any other smart contracts to inherit this information
-    uint[] private s_initialBids;
+    uint256[] private s_initialBids;
     string[] private s_auctionItems;
 
     // we create a mapping to check for duplicated items when creating an auction
@@ -66,16 +71,15 @@ error AuctionV2__UpkeepNotNeeded(
     address public immutable i_owner;
 
     struct Item {
-        uint highestBid;
+        uint256 highestBid;
         // highestBidder address must be payable so we can return bids that have been surpassed
         address payable highestBidder;
     }
 
     // EVENTS (valuable for when we change a dynamic variable and helpful for frontend developing)
 
-    event NewBid(address bidder, uint bid);
-    event RequestedAuctionWinners(uint256 indexed requestId);
-    event WinnerPicked(address indexed bidder);
+    event NewBid(address bidder, uint256 bid);
+    event WinnersPicked(address[] indexed bidders);
 
     // MODIFIERS
 
@@ -99,16 +103,6 @@ error AuctionV2__UpkeepNotNeeded(
         _;
     }
 
-    /**
-     * @notice modifier to check if the auction is live
-     * @dev every time the function place bid is called it should check the auction is still live
-     */
-
-    modifier auctionLive() {
-        if (block.timestamp > endTime) revert AuctionV2__AuctionEnded();
-        _;
-    }
-
     // FUNCTIONS
 
     /**
@@ -129,9 +123,9 @@ error AuctionV2__UpkeepNotNeeded(
      */
     function initAuction(
         string[] memory _auctionItems,
-        uint[] memory _initialBids,
-        uint _startTime,
-        uint _endTime
+        uint256[] memory _initialBids,
+        uint256 _startTime,
+        uint256 _endTime
     ) public onlyOwner {
         // checking for valid parameters values introduced
         if (_auctionItems.length <= 0) revert AuctionV2__EmptyList();
@@ -143,6 +137,10 @@ error AuctionV2__UpkeepNotNeeded(
         s_initialBids = _initialBids;
         startTime = _startTime;
         endTime = _endTime;
+
+        // we decalre the auction open so the oracle can later perform automatically upkeep
+        s_auctionState = AuctionState.OPEN;
+        s_interval = endTime - startTime;
 
         for (
             uint itemsIndex = 0;
@@ -157,6 +155,10 @@ error AuctionV2__UpkeepNotNeeded(
                 s_items[s_auctionItems[itemsIndex]].highestBid = s_initialBids[
                     itemsIndex
                 ];
+                // set the highest bidder to the owner
+                s_items[s_auctionItems[itemsIndex]].highestBidder = payable(
+                    msg.sender
+                );
             } else {
                 revert AuctionV2__DuplicateItems();
             }
@@ -170,11 +172,14 @@ error AuctionV2__UpkeepNotNeeded(
      * @param _item name to be able to go through our mapping an update highest bids and bidders
      */
 
-    function placeBid(string memory _item) public payable notOwner auctionLive {
+    function placeBid(string memory _item) public payable notOwner {
         // verify value is not smaller than the highest bid
         if (msg.value < s_items[_item].highestBid)
             revert AuctionV2__BidTooLow();
-        // saving to local variable to avoid going to storage two times
+        // verify auction is open
+        if (s_auctionState != AuctionState.OPEN)
+            revert AuctionV2__AuctionEnded();
+        // saving to local variable to avoid going to storage two times (higher gas cost)
         address payable highestBidder = s_items[_item].highestBidder;
         // if bid is higher, we return the value of the last highest bid to its owner
         // unless the recent owner is the contract owner which didnt lock any value in the bid
@@ -187,76 +192,64 @@ error AuctionV2__UpkeepNotNeeded(
         Item storage item = s_items[_item];
         item.highestBidder = payable(msg.sender);
         item.highestBid = msg.value;
+        // for later use with chainlink keepers
+        s_newBids = true;
+        // this event is mainly useful for later frontend development
         emit NewBid(item.highestBidder, item.highestBid);
     }
 
     /**
-     * @dev This is the function that the Chainlink Keeper nodes call
+     * @dev This is the function that the Chainlink Automation nodes call
      * they look for `upkeepNeeded` to return True.
      * the following should be true for this to return true:
-     * 1. The time interval has passed between raffle runs.
-     * 2. The lottery is open.
-     * 3. The contract has ETH.
-     * 4. Implicity, your subscription is funded with LINK.
-     
+     * 1. The time interval (endTime - startTime) has passes.
+     * 2. The auction is open.
+     * 3. Users have placed bids on at least one item (if not it is irrelevent to execute getHighestBidders)
+     * 4. Our chainlink automation subscription has enough LINK balance to execute.
+     */
+
     function checkUpkeep(
-        bytes memory /* checkData 
+        bytes memory /* checkData */
     )
         public
         view
         override
-        returns (bool upkeepNeeded, bytes memory /* performData )
+        returns (bool upkeepNeeded, bytes memory /* performData */)
     {
         bool isOpen = AuctionState.OPEN == s_auctionState;
-        // bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
-        bool hasPlayers = s_players.length > 0;
+        bool timePassed = ((block.timestamp - startTime) > s_interval);
         bool hasBalance = address(this).balance > 0;
-        upkeepNeeded = (timePassed && isOpen && hasBalance && hasPlayers);
-        return (upkeepNeeded, "0x0"); // can we comment this out?
+        upkeepNeeded = (isOpen && timePassed && s_newBids && hasBalance);
+        return (upkeepNeeded, "0x0");
     }
-    */
 
     /**
      * @dev Once `checkUpkeep` is returning `true`, this function is called
      * and it kicks off a Chainlink VRF call to get a random winner.
-     
-    function performUpkeep(bytes calldata performData ) external override {
+     */
+    function performUpkeep(bytes calldata /*performData*/) external override {
         (bool upkeepNeeded, ) = checkUpkeep("");
-        // require(upkeepNeeded, "Upkeep not needed");
         if (!upkeepNeeded) {
-            revert Raffle__UpkeepNotNeeded(
+            revert AuctionV2__UpkeepNotNeeded(
                 address(this).balance,
-                s_players.length,
-                uint256(s_raffleState)
+                s_newBids,
+                uint256(s_auctionState) // if it returns 1 or 2 the auction is calculating or ended
             );
         }
-        s_raffleState = RaffleState.CALCULATING;
-        uint256 requestId = i_vrfCoordinator.requestRandomWords(
-            i_gasLane,
-            i_subscriptionId,
-            REQUEST_CONFIRMATIONS,
-            i_callbackGasLimit,
-            NUM_WORDS
-        );
-        // Quiz... is this redundant?
-        emit RequestedRaffleWinner(requestId);
+        // so that no more bids are placed
+        s_auctionState = AuctionState.CALCULATING;
+        // we call the function to get the highest bidders
+        getHighestBidders();
     }
-    */
 
     /**
      * @notice function to determine the highest bidder for each item when the auction ends
-     * @dev this is a view function as it does not affect/alter the blockchain
+     * @dev We still keep modifier and first if check just in case upkeep doesnt work and owner has to call it manually
      * @return array I assume that it only returns the highest bidder for all of the items in auction that ended, and not also their highest bids
      */
-    function getHighestBidders()
-        public
-        view
-        onlyOwner
-        returns (address[] memory)
-    {
-        // first we must check that the auction has finished
-
+    function getHighestBidders() public onlyOwner returns (address[] memory) {
         if (block.timestamp < endTime) revert AuctionV2__AuctionLive();
+        // maybe add that the item is emptied after the auction has finished
         address[] memory highestBidders = new address[](s_auctionItems.length);
         for (
             uint itemsIndex = 0;
@@ -266,14 +259,12 @@ error AuctionV2__UpkeepNotNeeded(
             highestBidders[itemsIndex] = s_items[s_auctionItems[itemsIndex]]
                 .highestBidder;
         }
+        // again, this event would be for frontend development
+        emit WinnersPicked(highestBidders);
         return highestBidders;
     }
 
     // TESTING GETTERS
-
-    function getContractBalance() public view returns (uint) {
-        return address(this).balance;
-    }
 
     function getOwner() public view returns (address) {
         return i_owner;
@@ -283,7 +274,7 @@ error AuctionV2__UpkeepNotNeeded(
         return s_noDuplicate[item];
     }
 
-    function getHighestBid(string memory item) public view returns (uint) {
+    function getHighestBid(string memory item) public view returns (uint256) {
         return s_items[item].highestBid;
     }
 
