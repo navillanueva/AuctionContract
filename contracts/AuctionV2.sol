@@ -4,7 +4,7 @@ pragma solidity ^0.8.9;
 // 1.- Imports
 
 import "hardhat/console.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
 
 // 2.- Error codes
 
@@ -22,11 +22,7 @@ error AuctionV2__BidTooLow();
 /**
  * @dev we add some params to this error so the user can understand which one of the 3 is value that isnt allowing the function performUpKeep to execute
  */
-error AuctionV2__UpkeepNotNeeded(
-    uint256 currentBalance,
-    bool newBids,
-    uint256 AuctionState
-);
+error AuctionV2__UpkeepNotNeeded(bool newBids, uint256 AuctionState);
 
 // 3 .-Interfaces
 
@@ -41,7 +37,7 @@ error AuctionV2__UpkeepNotNeeded(
  *  @dev This implements chainlink automation
  */
 
-contract AuctionV2 is KeeperCompatibleInterface {
+contract AuctionV2 is AutomationCompatibleInterface {
     // TYPE DECLARATIONS
 
     enum AuctionState {
@@ -141,6 +137,7 @@ contract AuctionV2 is KeeperCompatibleInterface {
         // we decalre the auction open so the oracle can later perform automatically upkeep
         s_auctionState = AuctionState.OPEN;
         s_interval = endTime - startTime;
+        s_newBids = false;
 
         for (
             uint itemsIndex = 0;
@@ -177,8 +174,7 @@ contract AuctionV2 is KeeperCompatibleInterface {
         if (msg.value < s_items[_item].highestBid)
             revert AuctionV2__BidTooLow();
         // verify auction is open
-        if (s_auctionState != AuctionState.OPEN)
-            revert AuctionV2__AuctionEnded();
+        if (block.timestamp > endTime) revert AuctionV2__AuctionEnded();
         // saving to local variable to avoid going to storage two times (higher gas cost)
         address payable highestBidder = s_items[_item].highestBidder;
         // if bid is higher, we return the value of the last highest bid to its owner
@@ -205,8 +201,7 @@ contract AuctionV2 is KeeperCompatibleInterface {
      * 1. The time interval (endTime - startTime) has passes.
      * 2. The auction is open.
      * 3. Users have placed bids on at least one item (if not it is irrelevent to execute getHighestBidders)
-     * 4. Our chainlink automation subscription has enough LINK balance to execute.
-     */
+     * */
 
     function checkUpkeep(
         bytes memory /* checkData */
@@ -218,8 +213,7 @@ contract AuctionV2 is KeeperCompatibleInterface {
     {
         bool isOpen = AuctionState.OPEN == s_auctionState;
         bool timePassed = ((block.timestamp - startTime) > s_interval);
-        bool hasBalance = address(this).balance > 0;
-        upkeepNeeded = (isOpen && timePassed && s_newBids && hasBalance);
+        upkeepNeeded = (isOpen && timePassed && s_newBids);
         return (upkeepNeeded, "0x0");
     }
 
@@ -231,7 +225,6 @@ contract AuctionV2 is KeeperCompatibleInterface {
         (bool upkeepNeeded, ) = checkUpkeep("");
         if (!upkeepNeeded) {
             revert AuctionV2__UpkeepNotNeeded(
-                address(this).balance,
                 s_newBids,
                 uint256(s_auctionState) // if it returns 1 or 2 the auction is calculating or ended
             );
@@ -282,5 +275,13 @@ contract AuctionV2 is KeeperCompatibleInterface {
         string memory item
     ) public view returns (address) {
         return s_items[item].highestBidder;
+    }
+
+    function getAuctionState() public view returns (AuctionState) {
+        return s_auctionState;
+    }
+
+    function getBids() public view returns (bool) {
+        return s_newBids;
     }
 }

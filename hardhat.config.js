@@ -13,6 +13,10 @@ module.exports = {
   defaultNetwork: "hardhat",
   solidity: "0.8.17",
   networks: {
+    hardhat: {
+      chainId: 31337,
+      blockConfirmations: 1,
+    },
     goerli: {
       url: GOERLI_RPC_URL,
       accounts: [PRIVATE_KEY],

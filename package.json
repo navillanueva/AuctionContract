@@ -27,7 +27,8 @@
     "typechain": "^8.1.0"
   },
   "scripts":{
-    "test": "yarn hardhat test",
+    "test1": "yarn hardhat test ./test/unit/AuctionV1.test.js",
+    "test": "yarn hardhat test ./test/unit/AuctionV2.test.js",
     "test:staging": "yarn hardhat test --network goerli",
     "format": "yarn prettier --write",
     "coverage": "yarn hardhat coverage"

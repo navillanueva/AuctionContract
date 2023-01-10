@@ -21,6 +21,7 @@ module.exports = async ({ getNamedAccounts, deployments }) => {
       network.name
     ) /** && process.env.ETHERSCAN_API_KEY */
   ) {
+    log("Verifying...");
     await verify(auctionv2.address);
   }
 
