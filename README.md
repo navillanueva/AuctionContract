@@ -17,5 +17,4 @@ And these questions:
 2. Write test cases for the functions
 3. Explain your design choices and how/why you tested the contract to ensure that it is working as intended (comment your code using NatSpec)
 
-Part of the test are not fully implemented, but would like to know if I am missing any test that i should create (just the idea no need for the full code)
-```
+
