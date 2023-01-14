@@ -194,6 +194,7 @@ contract AuctionV2 is AutomationCompatibleInterface {
         emit NewBid(item.highestBidder, item.highestBid);
     }
 
+    // a different way of implementing this could be posible
     /**
      * @dev This is the function that the Chainlink Automation nodes call
      * they look for `upkeepNeeded` to return True.
