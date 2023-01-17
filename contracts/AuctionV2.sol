@@ -4,7 +4,7 @@ pragma solidity ^0.8.9;
 // 1.- Imports
 
 import "hardhat/console.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
+import "@chainlink/contracts/src/v0.8/AutomationCompatible.sol";
 
 // 2.- Error codes
 
@@ -51,7 +51,7 @@ contract AuctionV2 is AutomationCompatibleInterface {
     // start time and end time should be visible to all users
     uint256 public startTime;
     uint256 public endTime;
-    uint256 private s_interval;
+    uint256 public interval;
     bool private s_newBids;
 
     // we make the string and uint arrays private as we dont want any other smart contracts to inherit this information
@@ -65,6 +65,7 @@ contract AuctionV2 is AutomationCompatibleInterface {
     AuctionState private s_auctionState;
 
     address public immutable i_owner;
+    address[] public winners;
 
     struct Item {
         uint256 highestBid;
@@ -136,7 +137,7 @@ contract AuctionV2 is AutomationCompatibleInterface {
 
         // we decalre the auction open so the oracle can later perform automatically upkeep
         s_auctionState = AuctionState.OPEN;
-        s_interval = endTime - startTime;
+        interval = endTime - startTime;
         s_newBids = false;
 
         for (
@@ -213,7 +214,7 @@ contract AuctionV2 is AutomationCompatibleInterface {
         returns (bool upkeepNeeded, bytes memory /* performData */)
     {
         bool isOpen = AuctionState.OPEN == s_auctionState;
-        bool timePassed = ((block.timestamp - startTime) > s_interval);
+        bool timePassed = ((block.timestamp - startTime) > interval);
         upkeepNeeded = (isOpen && timePassed && s_newBids);
         return (upkeepNeeded, "0x0");
     }
@@ -233,7 +234,7 @@ contract AuctionV2 is AutomationCompatibleInterface {
         // so that no more bids are placed
         s_auctionState = AuctionState.CALCULATING;
         // we call the function to get the highest bidders
-        getHighestBidders();
+        winners = getHighestBidders();
     }
 
     /**
@@ -284,5 +285,9 @@ contract AuctionV2 is AutomationCompatibleInterface {
 
     function getBids() public view returns (bool) {
         return s_newBids;
+    }
+
+    function getTime() public view returns (uint256) {
+        return block.timestamp;
     }
 }
