@@ -42,12 +42,10 @@ contract AuctionV1 {
     uint public startTime;
     uint public endTime;
 
-    // we make the string and uint arrays private as we dont want any other smart contracts to inherit this information
     uint[] private s_initialBids;
     string[] private s_auctionItems;
 
     // we create a mapping to check for duplicated items when creating an auction
-    // the default value for all of the booleans is false
     mapping(string => bool) private s_noDuplicate;
     mapping(string => Item) private s_items;
 
@@ -121,8 +119,7 @@ contract AuctionV1 {
     ) public onlyOwner {
         // checking for valid parameters values introduced
         if (_auctionItems.length <= 0) revert AuctionV1__EmptyList();
-        if (_auctionItems.length != _initialBids.length)
-            revert AuctionV1__WrongArraySize();
+        if (_auctionItems.length != _initialBids.length) revert AuctionV1__WrongArraySize();
         if (_startTime > _endTime) revert AuctionV1__WrongTimeValues();
 
         s_auctionItems = _auctionItems;
@@ -130,19 +127,13 @@ contract AuctionV1 {
         startTime = _startTime;
         endTime = _endTime;
 
-        for (
-            uint itemsIndex = 0;
-            itemsIndex < s_auctionItems.length;
-            itemsIndex++
-        ) {
+        for (uint itemsIndex = 0; itemsIndex < s_auctionItems.length; itemsIndex++) {
             // check that the mapping value hasnt been changed to true, which would mean there is a duplicate
             if (!s_noDuplicate[s_auctionItems[itemsIndex]]) {
                 // change item value to true
                 s_noDuplicate[s_auctionItems[itemsIndex]] = true;
                 // set initial value for that specific item
-                s_items[s_auctionItems[itemsIndex]].highestBid = s_initialBids[
-                    itemsIndex
-                ];
+                s_items[s_auctionItems[itemsIndex]].highestBid = s_initialBids[itemsIndex];
             } else {
                 revert AuctionV1__DuplicateItems();
             }
@@ -158,8 +149,7 @@ contract AuctionV1 {
 
     function placeBid(string memory _item) public payable notOwner auctionLive {
         // verify value is not smaller than the highest bid
-        if (msg.value < s_items[_item].highestBid)
-            revert AuctionV1__BidTooLow();
+        if (msg.value < s_items[_item].highestBid) revert AuctionV1__BidTooLow();
         // saving to local variable to avoid going to storage two times
         address payable highestBidder = s_items[_item].highestBidder;
         // if bid is higher, we return the value of the last highest bid to its owner
@@ -181,23 +171,13 @@ contract AuctionV1 {
      * @dev this is a view function as it does not affect/alter the blockchain
      * @return array I assume that it only returns the highest bidder for all of the items in auction that ended, and not also their highest bids
      */
-    function getHighestBidders()
-        public
-        view
-        onlyOwner
-        returns (address[] memory)
-    {
+    function getHighestBidders() public view onlyOwner returns (address[] memory) {
         // first we must check that the auction has finished
 
         if (block.timestamp < endTime) revert AuctionV1__AuctionLive();
         address[] memory highestBidders = new address[](s_auctionItems.length);
-        for (
-            uint itemsIndex = 0;
-            itemsIndex < s_auctionItems.length;
-            itemsIndex++
-        ) {
-            highestBidders[itemsIndex] = s_items[s_auctionItems[itemsIndex]]
-                .highestBidder;
+        for (uint itemsIndex = 0; itemsIndex < s_auctionItems.length; itemsIndex++) {
+            highestBidders[itemsIndex] = s_items[s_auctionItems[itemsIndex]].highestBidder;
         }
         return highestBidders;
     }
@@ -208,21 +188,7 @@ contract AuctionV1 {
         return address(this).balance;
     }
 
-    function getOwner() public view returns (address) {
-        return i_owner;
-    }
-
-    function getDuplicateValue(string memory item) public view returns (bool) {
-        return s_noDuplicate[item];
-    }
-
-    function getHighestBid(string memory item) public view returns (uint) {
-        return s_items[item].highestBid;
-    }
-
-    function getHighestBidder(
-        string memory item
-    ) public view returns (address) {
+    function getHighestBidder(string memory item) public view returns (address) {
         return s_items[item].highestBidder;
     }
 }
